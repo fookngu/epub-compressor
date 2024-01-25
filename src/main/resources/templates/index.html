@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome Page</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}" />
+</head>
+<body>
+<div class="container">
+    <h1>Welcome to Epub compressor</h1>
+    <p>Your storage-friendly solution to epub!</p>
+    <img th:src="@{/icon/epub.png}" alt="Logo" />
+    <div class="buttons">
+        <a class="button" th:href="@{/about}">Learn More</a>
+        <a class="button" th:href="@{/contact}">Get in Touch</a>
+    </div>
+</div>
+</body>
+</html>
