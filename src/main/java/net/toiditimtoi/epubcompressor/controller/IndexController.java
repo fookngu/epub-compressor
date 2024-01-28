@@ -29,7 +29,10 @@ public class IndexController {
 
         var fsResource = compressionService.compress(compressionRequest);  // Redirect to home page after processing
         var headers = new HttpHeaders();
-        headers.add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=compressed_" + compressionRequest.file().getOriginalFilename());
+        var headerValue = """
+                attachment; filename="compressed_%s"
+                """.formatted(compressionRequest.file().getOriginalFilename());
+        headers.add(HttpHeaders.CONTENT_DISPOSITION, headerValue);
         return ResponseEntity.ok().headers(headers).contentType(MediaType.APPLICATION_OCTET_STREAM).body(fsResource);
     }
 }
