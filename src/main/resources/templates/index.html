@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Welcome Page</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}" />
+</head>
+<body>
+<div class="container">
+    <h1>Welcome to Epub compressor</h1>
+    <p>Your storage-friendly solution to epub!</p>
+    <img th:src="@{/icon/epub.png}" alt="Logo" />
+    <form th:action="@{/epub/compress}" method="post" enctype="multipart/form-data">
+        <div>
+            <label for="file">Upload EPUB File:</label>
+            <input type="file" id="file" name="file" accept=".epub" required>
+        </div>
+        <div>
+            <label for="compressionRatio">Compression Ratio:</label>
+            <input type="number" id="compressionRatio" name="compressionRatio" min="1" max="100" required>
+        </div>
+        <button type="submit">Compress</button>
+    </form>
+
+</div>
+</body>
+</html>
