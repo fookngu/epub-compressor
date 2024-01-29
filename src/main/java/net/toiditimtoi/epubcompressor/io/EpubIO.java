@@ -9,6 +9,8 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
@@ -17,7 +19,7 @@ import java.util.zip.ZipOutputStream;
 public class EpubIO {
 
     public static final String PATH_TO_CAESIUM = "/Users/phucngu/workspace/caesium-clt/target/release/caesiumclt";
-    private static final Path epubImagesFolder = Path.of("OEBPS", "images");
+    public static final String RECURSIVE_KEEP_STRUCTURE = "-RS";
 
     public static Path extractEpub(String epubFilePath) throws IOException {
         // Create a temporary folder to extract the contents
@@ -70,9 +72,9 @@ public class EpubIO {
         return Files.createTempDirectory(epubExtractedContent.getParent(), "image-epub");
     }
 
-    public static Path compressImages(Path sourceFolder, Path outputFolder, int compressionRatio) {
+    public static void compressImages(Path sourceFolder, Path outputFolder, int compressionRatio) {
         // prepare the command to start a caesium process
-        var processBuilder = new ProcessBuilder(PATH_TO_CAESIUM, "-q", String.valueOf(compressionRatio), "-RS", "-o", outputFolder.toString(), sourceFolder.toString());
+        var processBuilder = new ProcessBuilder(PATH_TO_CAESIUM, "-q", String.valueOf(compressionRatio), RECURSIVE_KEEP_STRUCTURE, "-o", outputFolder.toString(), sourceFolder.toString());
 
         // start the process
         Process process = null;
@@ -81,7 +83,7 @@ public class EpubIO {
         } catch (IOException ioException) {
             throw new RuntimeException("Cannot compress");
         }
-        try(BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
             // read the output from the command
             String line;
             while ((line = reader.readLine()) != null) {
@@ -95,7 +97,6 @@ public class EpubIO {
         } catch (IOException | InterruptedException ioe) {
             ioe.printStackTrace();
         }
-        return outputFolder;
     }
 
 //    public Path addCompressedImagesAndOriginalNonImageToEpubFile()
@@ -108,31 +109,33 @@ public class EpubIO {
         var imageOutputFolder = prepareTargetFolder(extractedEpubFolder);
 
         // call Caesium to do the image compression
-        var sourceImageFolder = extractedEpubFolder.resolve(epubImagesFolder);
-        var outputImg = compressImages(sourceImageFolder, imageOutputFolder, compressionRatio);
+        compressImages(extractedEpubFolder, imageOutputFolder, compressionRatio);
         // create the zip file
         var originalFileName = sourceEpubFile.getFileName().toString();
         var nameComponents = originalFileName.split("\\.");
         Path targetEpub = sourceEpubFile.resolveSibling(nameComponents[0] + "_compressed.epub");
 
         try (ZipOutputStream zipOutputStream = new ZipOutputStream(new FileOutputStream(targetEpub.toFile()))) {
-            // copy the original non-image over
-            try (var originalNonImageStream = Files.walk(extractedEpubFolder)) {
-                originalNonImageStream.filter(path -> !extractedEpubFolder.relativize(path).startsWith(epubImagesFolder)).forEach(originalEntry -> {
+            // copy the compressed image over
+            var addedCompressedFiles = addAllToZip(imageOutputFolder, zipOutputStream);
+
+            // copy the original non-image (not compressed by caesium) over
+            try (var extractedEpubStream = Files.walk(extractedEpubFolder)) {
+                extractedEpubStream.filter(path -> !addedCompressedFiles.contains(extractedEpubFolder.relativize(path).toString())).forEach(nonCompressedEntry -> {
                     // Get the relative path of the file or directory
-                    Path relativePath = extractedEpubFolder.relativize(originalEntry);
+                    Path relativePath = extractedEpubFolder.relativize(nonCompressedEntry);
 
                     try {
                         // Create a new entry for each file or directory
                         ZipEntry zipEntry = new ZipEntry(relativePath.toString());
-                        if (Files.isDirectory(originalEntry)) {
+                        if (Files.isDirectory(nonCompressedEntry)) {
                             zipEntry = new ZipEntry(zipEntry.getName() + "/");
                         }
                         zipOutputStream.putNextEntry(zipEntry);
 
                         // If it's a file, copy its content to the zip output stream
-                        if (Files.isRegularFile(originalEntry)) {
-                            Files.copy(originalEntry, zipOutputStream);
+                        if (Files.isRegularFile(nonCompressedEntry)) {
+                            Files.copy(nonCompressedEntry, zipOutputStream);
                         }
 
                         zipOutputStream.closeEntry();
@@ -141,36 +144,39 @@ public class EpubIO {
                     }
                 });
             }
-
-            // copy the compressed image over
-            try (var insideTheCompressedImgFolderStream = Files.walk(outputImg)) {
-                insideTheCompressedImgFolderStream.forEach(imgPath -> {
-                    Path relativePath = imageOutputFolder.relativize(imgPath);
-                    Path relativeToTargetEpubPath = epubImagesFolder.resolve(relativePath);
-                    try {
-                        // create a new entry for each file or directory
-                        ZipEntry zipEntry = new ZipEntry(relativeToTargetEpubPath.toString());
-                        if (Files.isDirectory(imgPath)) {
-                            zipEntry = new ZipEntry(zipEntry.getName() + "/");
-                        }
-                        zipOutputStream.putNextEntry(zipEntry);
-
-                        if (Files.isRegularFile(imgPath)) {
-                            Files.copy(imgPath, zipOutputStream);
-                        }
-
-                        zipOutputStream.closeEntry(); // Ensure this is called instead of zipOutputStream.close();
-                    } catch (IOException ioException) {
-                        ioException.printStackTrace();
-                    }
-                });
-            }
-
         }
 
         // clean up all the temp folder
         deleteRecursively(extractedEpubFolder);
         deleteRecursively(imageOutputFolder);
-        return targetEpub ;
+        return targetEpub;
+    }
+
+    private static Set<String> addAllToZip(Path sourceFolder, ZipOutputStream zipOutputStream) {
+        Set<String> addedFiles = new HashSet<>();
+        try (var insideTheCompressedImgFolderStream = Files.walk(sourceFolder)) {
+            insideTheCompressedImgFolderStream.forEach(imgPath -> {
+                Path relativePath = sourceFolder.relativize(imgPath);
+                try {
+                    // create a new entry for each file or directory
+                    ZipEntry zipEntry = new ZipEntry(relativePath.toString());
+                    if (Files.isDirectory(imgPath)) {
+                        zipEntry = new ZipEntry(zipEntry.getName() + "/");
+                    }
+                    zipOutputStream.putNextEntry(zipEntry);
+
+                    if (Files.isRegularFile(imgPath)) {
+                        Files.copy(imgPath, zipOutputStream);
+                    }
+                    zipOutputStream.closeEntry();
+                    addedFiles.add(relativePath.toString());
+                } catch (IOException ioException) {
+                    ioException.printStackTrace();
+                }
+            });
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        return addedFiles;
     }
 }
